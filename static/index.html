@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #ffffff;
+      color: #333;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    #connection-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #f5f5f5;
+      align-items: center;
+      flex-wrap: wrap;
+      border-bottom: 1px solid #ddd;
+    }
+    #connection-bar input {
+      background: #fff;
+      border: 1px solid #ccc;
+      color: #333;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    #connection-bar input[name="url"] { flex: 1; min-width: 300px; }
+    #connection-bar input[name="token"] { width: 220px; }
+    #connection-bar button {
+      padding: 6px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    #btn-connect { background: #4caf50; color: #fff; }
+    #btn-connect:hover { background: #45a049; }
+    #btn-disconnect { background: #f44336; color: #fff; }
+    #btn-disconnect:hover { background: #d32f2f; }
+    #status {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #e0e0e0;
+      color: #333;
+    }
+    #status.connected { background: #c8e6c9; color: #2e7d32; }
+    #status.disconnected { background: #ffcdd2; color: #c62828; }
+    .xterm-rows span {
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="connection-bar">
+    <input name="url" placeholder="ws://localhost:8888/ws (leave empty for auto)" value="">
+    <input name="token" type="password" placeholder="Token (optional)">
+    <button id="btn-connect">Connect</button>
+    <button id="btn-disconnect">Disconnect</button>
+    <span id="status" class="disconnected">disconnected</span>
+  </div>
+  <div id="terminal-container" style="flex:1; overflow:hidden;"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-canvas@0.7.0/lib/addon-canvas.min.js"></script>
+
+  <script type="module">
+    import { TerminalUI } from '/static/js/terminal-ui.js';
+    import { TerminalConnection } from '/static/js/terminal-connection.js';
+
+    const urlInput = document.querySelector('input[name="url"]');
+    const tokenInput = document.querySelector('input[name="token"]');
+    const btnConnect = document.getElementById('btn-connect');
+    const btnDisconnect = document.getElementById('btn-disconnect');
+    const statusEl = document.getElementById('status');
+
+    const termUI = new TerminalUI(document.getElementById('terminal-container'));
+    const term = termUI.init();
+
+    const connection = new TerminalConnection();
+    connection.attachTerminal(term);
+    connection.onStatus((status) => {
+      statusEl.textContent = status;
+      statusEl.className = status;
+    });
+
+    function getWsUrl() {
+      if (urlInput.value.trim()) return urlInput.value.trim();
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${proto}//${location.host}/ws`;
+    }
+
+    function connect() {
+      const url = getWsUrl();
+      const token = tokenInput.value.trim() || null;
+      term.write('Connecting...\r\n');
+      connection.connect(url, token);
+    }
+
+    function disconnect() {
+      connection.disconnect();
+    }
+
+    btnConnect.addEventListener('click', connect);
+    btnDisconnect.addEventListener('click', disconnect);
+
+    term.write('Web Terminal\r\n');
+    setTimeout(connect, 300);
+  </script>
+</body>
+</html>
