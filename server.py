@@ -195,33 +195,41 @@ class WindowsPtyProcess:
             self.process.setwinsize(rows, cols)
 
     def read_nonblock(self):
-        if not self.process or not self.process.isalive():
+        if not self.process:
             return b""
         try:
+            if not self.process.isalive():
+                return b""
             data = self.process.read(READ_BUFSIZE)
             return data.encode("utf-8") if isinstance(data, str) else data
-        except (EOFError, winpty.WinptyError):
+        except (EOFError, OSError, Exception):
             return b""
 
     def read_wait(self, timeout=0.01):
-        if not self.process or not self.process.isalive():
+        if not self.process:
             return b""
         import time
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             try:
+                if not self.process.isalive():
+                    return b""
                 data = self.process.read(READ_BUFSIZE)
                 if data:
                     return data.encode("utf-8") if isinstance(data, str) else data
-            except (EOFError, winpty.WinptyError):
+            except (EOFError, OSError, Exception):
                 return b""
             time.sleep(0.005)
         return b""
 
     def write(self, data):
-        if self.process:
+        if not self.process:
+            return
+        try:
             text = data if isinstance(data, str) else data.decode("utf-8", errors="replace")
             self.process.write(text)
+        except (EOFError, OSError, Exception):
+            pass
 
     def kill(self):
         if self in _active_processes:
@@ -236,7 +244,10 @@ class WindowsPtyProcess:
     def is_alive(self):
         if self.process is None:
             return False
-        return self.process.isalive()
+        try:
+            return self.process.isalive()
+        except (EOFError, OSError, Exception):
+            return False
 
 
 def _safe_utf8_split(buf: bytes) -> tuple[bytes, bytes]:
