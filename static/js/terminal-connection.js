@@ -27,19 +27,21 @@ class TerminalConnection {
   connect(url, token = null) {
     this.disconnect();
 
-    this.client = new WebSocketClient(url, token);
+    const client = new WebSocketClient(url, token);
+    this.client = client;
 
-    this.client.onOpen = () => {
+    client.onOpen = () => {
+      if (this.client !== client) return;
       this._setStatus("connected");
       this.terminal.reset();
-      this.client.sendJSON({
+      client.sendJSON({
         cols: this.terminal.cols,
         rows: this.terminal.rows,
       });
     };
 
-    this.client.onMessage = (data) => {
-      if (!this.terminal) return;
+    client.onMessage = (data) => {
+      if (this.client !== client || !this.terminal) return;
       if (data instanceof ArrayBuffer) {
         this.terminal.write(new Uint8Array(data));
       } else if (typeof data === "string") {
@@ -47,12 +49,16 @@ class TerminalConnection {
       }
     };
 
-    this.client.onClose = () => {
+    client.onClose = () => {
+      // Ignore close events from a superseded connection so a stale
+      // close doesn't detach the new connection's terminal handlers.
+      if (this.client !== client) return;
       this._setStatus("disconnected");
       this._detachTerminalHandlers();
     };
 
-    this.client.onError = () => {
+    client.onError = () => {
+      if (this.client !== client) return;
       this._setStatus("disconnected");
     };
 

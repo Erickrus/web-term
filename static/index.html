@@ -8,58 +8,177 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #ffffff;
-      color: #333;
+      font-family: "Google Sans Text", "Google Sans", "Noto", system-ui, sans-serif;
+      background: #fff;
+      color: #1f1f1f;
       height: 100vh;
       display: flex;
       flex-direction: column;
-    }
-    #connection-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: #f5f5f5;
-      align-items: center;
-      flex-wrap: wrap;
-      border-bottom: 1px solid #ddd;
-    }
-    #connection-bar input {
-      background: #fff;
-      border: 1px solid #ccc;
-      color: #333;
-      padding: 6px 10px;
-      border-radius: 4px;
-      font-size: 13px;
-    }
-    #connection-bar input[name="url"] { flex: 1; min-width: 300px; }
-    #connection-bar input[name="token"] { width: 220px; }
-    #connection-bar button {
-      padding: 6px 16px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      background: #1677ff;
-      color: #fff;
-    }
-    #connection-bar button:hover { background: #4096ff; }
-    #connection-bar button.active { background: #0958d9; }
-    #status {
-      font-size: 12px;
-      padding: 2px 8px;
-      border-radius: 10px;
-      background: #e0e0e0;
-      color: #333;
-    }
-    #status.connected { background: #c8e6c9; color: #2e7d32; }
-    #status.disconnected { background: #ffcdd2; color: #c62828; }
-    .xterm-rows span {
       overflow: hidden;
     }
-    #terminal-container { position: relative; }
-    #copy-overlay {
+
+    /* Menu Bar */
+    #menubar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 4px 12px;
+      background: #f8fafd;
+      border-bottom: 1px solid #e1e3e1;
+      height: 36px;
+      user-select: none;
+    }
+    .menu-button {
+      position: relative;
+      padding: 4px 10px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #1f1f1f;
+      cursor: pointer;
+      border-radius: 4px;
+      line-height: 20px;
+    }
+    .menu-button:hover, .menu-button.open {
+      background: rgba(31,31,31,0.08);
+    }
+    .menu-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      min-width: 220px;
+      background: #fff;
+      border: 1px solid #c4c7c5;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15), 0 8px 24px rgba(0,0,0,0.08);
+      padding: 6px 0;
+      z-index: 20000;
+      margin-top: 2px;
+    }
+    .menu-button.open .menu-dropdown {
+      display: block;
+    }
+    .menu-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 400;
+      color: #1f1f1f;
+      cursor: pointer;
+      white-space: nowrap;
+      margin: 0 6px;
+      border-radius: 4px;
+    }
+    .menu-item:hover {
+      background: rgba(31,31,31,0.08);
+    }
+    .menu-item .shortcut {
+      margin-left: auto;
+      padding-left: 32px;
+      color: #747775;
+      font-size: 12px;
+    }
+    .menu-item .check {
+      width: 20px;
+      margin-right: 4px;
+      text-align: center;
+      font-size: 14px;
+    }
+    .menu-separator {
+      border-top: 1px solid #e1e3e1;
+      margin: 6px 0;
+    }
+    .menu-item.disabled {
+      color: rgba(31,31,31,0.38);
+      pointer-events: none;
+    }
+
+    /* Status indicator in menubar */
+    #status-indicator {
+      margin-left: auto;
+      font-size: 12px;
+      padding: 2px 10px;
+      border-radius: 10px;
+      background: #e0e0e0;
+      color: #444;
+    }
+    #status-indicator.connected { background: #c8e6c9; color: #2e7d32; }
+    #status-indicator.disconnected { background: #ffcdd2; color: #c62828; }
+
+    /* Tab Strip */
+    #tab-strip {
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      background: #f0f4f9;
+      border-bottom: 1px solid #e1e3e1;
+      height: 34px;
+      overflow-x: auto;
+      gap: 2px;
+    }
+    #tab-strip::-webkit-scrollbar { height: 0; }
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: #444746;
+      cursor: pointer;
+      border-radius: 6px 6px 0 0;
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: background 0.1s;
+    }
+    .tab:hover { background: rgba(31,31,31,0.05); }
+    .tab.active {
+      color: #0b57d0;
+      border-bottom-color: #0b57d0;
+      background: #fff;
+    }
+    .tab .close-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      font-size: 14px;
+      line-height: 1;
+      color: #747775;
+    }
+    .tab .close-btn:hover { background: rgba(31,31,31,0.12); color: #1f1f1f; }
+    #btn-new-tab {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      font-size: 18px;
+      color: #444746;
+      cursor: pointer;
+      margin-left: 4px;
+    }
+    #btn-new-tab:hover { background: rgba(31,31,31,0.08); }
+
+    /* Terminal Area */
+    #terminals {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    .terminal-pane {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: none;
+      overflow: hidden;
+    }
+    .terminal-pane.active { display: block; }
+
+    /* Copy overlay */
+    .copy-overlay {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
       z-index: 10;
@@ -68,21 +187,175 @@
       user-select: text;
       -webkit-user-select: text;
       color: transparent;
-      background: rgba(22, 119, 255, 0.04);
+      background: rgba(11, 87, 208, 0.04);
       cursor: text;
     }
+
+    /* Modal Overlay */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.3);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.visible { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 16px 48px rgba(0,0,0,0.1);
+      padding: 24px;
+      width: 420px;
+      max-width: 90vw;
+    }
+    .modal h2 {
+      font-size: 16px;
+      font-weight: 500;
+      margin-bottom: 16px;
+      color: #1f1f1f;
+    }
+    .modal label {
+      display: block;
+      font-size: 13px;
+      color: #444746;
+      margin-bottom: 4px;
+      margin-top: 12px;
+    }
+    .modal input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #c4c7c5;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #1f1f1f;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .modal input:focus { border-color: #0b57d0; }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 20px;
+    }
+    .modal-actions button {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: #0b57d0;
+      color: #fff;
+    }
+    .btn-primary:hover { background: #0842a0; }
+    .btn-secondary {
+      background: transparent;
+      color: #0b57d0;
+    }
+    .btn-secondary:hover { background: rgba(11,87,208,0.08); }
+
+    .xterm-rows span { overflow: hidden; }
   </style>
 </head>
 <body>
-  <div id="connection-bar">
-    <input name="url" placeholder="ws://localhost:8888/ws (leave empty for auto)" value="">
-    <input name="token" type="password" placeholder="Token (optional)">
-    <button id="btn-connect">Connect</button>
-    <button id="btn-disconnect">Disconnect</button>
-    <button id="btn-copy">Copy</button>
-    <span id="status" class="disconnected">disconnected</span>
+
+  <!-- Menu Bar -->
+  <div id="menubar">
+    <div class="menu-button" data-menu="file">
+      File
+      <div class="menu-dropdown">
+        <div class="menu-item" data-action="new-terminal">
+          <span class="check"></span>New Terminal<span class="shortcut">Ctrl+Shift+T</span>
+        </div>
+        <div class="menu-item" data-action="connect">
+          <span class="check"></span>Connect...
+        </div>
+        <div class="menu-item" data-action="disconnect">
+          <span class="check"></span>Disconnect
+        </div>
+        <div class="menu-separator"></div>
+        <div class="menu-item" data-action="close-tab">
+          <span class="check"></span>Close Tab<span class="shortcut">Ctrl+W</span>
+        </div>
+      </div>
+    </div>
+    <div class="menu-button" data-menu="edit">
+      Edit
+      <div class="menu-dropdown">
+        <div class="menu-item" data-action="copy-mode">
+          <span class="check"></span>Copy Mode
+        </div>
+      </div>
+    </div>
+    <div class="menu-button" data-menu="view">
+      View
+      <div class="menu-dropdown" id="view-menu-dropdown">
+      </div>
+    </div>
+    <div class="menu-button" data-menu="help">
+      Help
+      <div class="menu-dropdown">
+        <div class="menu-item" data-action="about">
+          <span class="check"></span>About
+        </div>
+      </div>
+    </div>
+    <span id="status-indicator" class="disconnected">disconnected</span>
   </div>
-  <div id="terminal-container" style="flex:1; overflow:hidden;"></div>
+
+  <!-- Tab Strip -->
+  <div id="tab-strip">
+    <div id="btn-new-tab" title="New Terminal">+</div>
+  </div>
+
+  <!-- Terminals -->
+  <div id="terminals"></div>
+
+  <!-- Connect Modal -->
+  <div class="modal-backdrop" id="connect-modal">
+    <div class="modal">
+      <h2>Connect to Server</h2>
+      <label for="modal-url">WebSocket URL</label>
+      <input id="modal-url" type="text" placeholder="ws://localhost:8888/ws (leave empty for auto)">
+      <label for="modal-token">Token</label>
+      <input id="modal-token" type="password" placeholder="Token (optional)">
+      <div class="modal-actions">
+        <button class="btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn-primary" id="modal-connect">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename Tab Modal -->
+  <div class="modal-backdrop" id="rename-modal">
+    <div class="modal">
+      <h2>Rename Terminal</h2>
+      <label for="rename-input">Name</label>
+      <input id="rename-input" type="text" placeholder="Terminal name">
+      <div class="modal-actions">
+        <button class="btn-secondary" id="rename-cancel">Cancel</button>
+        <button class="btn-primary" id="rename-ok">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- About Modal -->
+  <div class="modal-backdrop" id="about-modal">
+    <div class="modal" style="text-align: center;">
+      <h2>Web Terminal</h2>
+      <p style="font-size: 14px; color: #444746; margin: 12px 0;">Version 0.1</p>
+      <p style="font-size: 13px; color: #747775; margin: 8px 0;">Author: Hu, Ying-Hao</p>
+      <p style="font-size: 13px; color: #747775; margin: 8px 0;">Date: 2026-07-20</p>
+      <div class="modal-actions" style="justify-content: center; margin-top: 16px;">
+        <button class="btn-primary" id="about-ok">OK</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
@@ -93,68 +366,195 @@
     import { TerminalUI } from '/static/js/terminal-ui.js';
     import { TerminalConnection } from '/static/js/terminal-connection.js';
 
-    const urlInput = document.querySelector('input[name="url"]');
-    const tokenInput = document.querySelector('input[name="token"]');
-    const btnConnect = document.getElementById('btn-connect');
-    const btnDisconnect = document.getElementById('btn-disconnect');
-    const btnCopy = document.getElementById('btn-copy');
-    const statusEl = document.getElementById('status');
-    const termContainer = document.getElementById('terminal-container');
+    const tabStrip = document.getElementById('tab-strip');
+    const btnNewTab = document.getElementById('btn-new-tab');
+    const terminalsEl = document.getElementById('terminals');
+    const statusEl = document.getElementById('status-indicator');
+    const connectModal = document.getElementById('connect-modal');
+    const modalUrl = document.getElementById('modal-url');
+    const modalToken = document.getElementById('modal-token');
+    const modalConnect = document.getElementById('modal-connect');
+    const modalCancel = document.getElementById('modal-cancel');
+    const renameModal = document.getElementById('rename-modal');
+    const renameInput = document.getElementById('rename-input');
+    const renameOk = document.getElementById('rename-ok');
+    const renameCancel = document.getElementById('rename-cancel');
+    const viewDropdown = document.getElementById('view-menu-dropdown');
 
-    // Extract token from URL query param and strip it from address bar
+    // Extract token from URL query param
     const params = new URLSearchParams(location.search);
     if (params.has('token')) {
-      tokenInput.value = params.get('token');
-      const cleanUrl = location.pathname;
-      history.replaceState(null, '', cleanUrl);
+      modalToken.value = params.get('token');
+      history.replaceState(null, '', location.pathname);
     }
 
-    const termUI = new TerminalUI(document.getElementById('terminal-container'));
-    const term = termUI.init();
-
-    const connection = new TerminalConnection();
-    connection.attachTerminal(term);
-    connection.onStatus((status) => {
-      statusEl.textContent = status;
-      statusEl.className = status;
-    });
+    let savedUrl = '';
+    let savedToken = modalToken.value.trim();
+    let tabs = [];
+    let activeTabId = null;
+    let tabCounter = 0;
+    let copyMode = false;
+    let copyOverlay = null;
 
     function getWsUrl() {
-      if (urlInput.value.trim()) return urlInput.value.trim();
+      if (savedUrl.trim()) return savedUrl.trim();
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       return `${proto}//${location.host}/ws`;
     }
 
-    function connect() {
-      const url = getWsUrl();
-      const token = tokenInput.value.trim() || null;
-      connection.connect(url, token);
+    function createTab(autoConnect = true) {
+      tabCounter++;
+      const id = `term-${tabCounter}`;
+      const label = `Terminal ${tabCounter}`;
+
+      const pane = document.createElement('div');
+      pane.className = 'terminal-pane';
+      pane.id = `pane-${id}`;
+      terminalsEl.appendChild(pane);
+
+      const termUI = new TerminalUI(pane);
+      const term = termUI.init();
+
+      const connection = new TerminalConnection();
+      connection.attachTerminal(term);
+      connection.onStatus((status) => {
+        if (id === activeTabId) {
+          statusEl.textContent = status;
+          statusEl.className = status;
+        }
+      });
+
+      const tabEl = document.createElement('div');
+      tabEl.className = 'tab';
+      tabEl.dataset.id = id;
+      tabEl.innerHTML = `<span class="tab-label">${label}</span><span class="close-btn">&times;</span>`;
+      tabStrip.insertBefore(tabEl, btnNewTab);
+
+      tabEl.querySelector('.tab-label').addEventListener('click', () => switchTab(id));
+      tabEl.querySelector('.tab-label').addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        renameTab(id);
+      });
+      tabEl.querySelector('.close-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeTab(id);
+      });
+
+      const tab = { id, label, termUI, term, connection, pane, tabEl };
+      tabs.push(tab);
+
+      switchTab(id);
+
+      if (autoConnect) {
+        const url = getWsUrl();
+        const token = savedToken || null;
+        connection.connect(url, token);
+      }
+
+      return tab;
     }
 
-    function disconnect() {
-      connection.disconnect();
+    function switchTab(id) {
+      if (copyMode) exitCopyMode();
+
+      activeTabId = id;
+      tabs.forEach(t => {
+        const isActive = t.id === id;
+        t.pane.classList.toggle('active', isActive);
+        t.tabEl.classList.toggle('active', isActive);
+        if (isActive) {
+          t.termUI.fit();
+          const connected = t.connection.client && t.connection.client.isOpen();
+          statusEl.textContent = connected ? 'connected' : 'disconnected';
+          statusEl.className = connected ? 'connected' : 'disconnected';
+        }
+      });
     }
 
-    btnConnect.addEventListener('click', connect);
-    btnDisconnect.addEventListener('click', disconnect);
+    function closeTab(id) {
+      const idx = tabs.findIndex(t => t.id === id);
+      if (idx === -1) return;
+      if (tabs.length === 1) return; // keep at least one tab
 
-    urlInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') connect();
+      const tab = tabs[idx];
+      tab.connection.disconnect();
+      tab.termUI.dispose();
+      tab.pane.remove();
+      tab.tabEl.remove();
+      tabs.splice(idx, 1);
+
+      if (activeTabId === id) {
+        const newIdx = Math.min(idx, tabs.length - 1);
+        switchTab(tabs[newIdx].id);
+      }
+    }
+
+    function getActiveTab() {
+      return tabs.find(t => t.id === activeTabId);
+    }
+
+    // Rename tab
+    let renameTargetId = null;
+
+    function renameTab(id) {
+      const tab = tabs.find(t => t.id === id);
+      if (!tab) return;
+      renameTargetId = id;
+      renameInput.value = tab.label;
+      renameModal.classList.add('visible');
+      renameInput.focus();
+      renameInput.select();
+    }
+
+    function doRename() {
+      const name = renameInput.value.trim();
+      if (!name || !renameTargetId) { hideRenameModal(); return; }
+      const tab = tabs.find(t => t.id === renameTargetId);
+      if (tab) {
+        tab.label = name;
+        tab.tabEl.querySelector('.tab-label').textContent = name;
+      }
+      hideRenameModal();
+    }
+
+    function hideRenameModal() {
+      renameModal.classList.remove('visible');
+      renameTargetId = null;
+    }
+
+    renameOk.addEventListener('click', doRename);
+    renameCancel.addEventListener('click', hideRenameModal);
+    renameModal.addEventListener('click', (e) => {
+      if (e.target === renameModal) hideRenameModal();
     });
-    tokenInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') connect();
+    renameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doRename();
+      if (e.key === 'Escape') hideRenameModal();
     });
 
-    let copyMode = false;
-    let copyOverlay = null;
+    // About modal
+    const aboutModal = document.getElementById('about-modal');
+    const aboutOk = document.getElementById('about-ok');
 
+    function showAboutModal() { aboutModal.classList.add('visible'); }
+    function hideAboutModal() { aboutModal.classList.remove('visible'); }
+
+    aboutOk.addEventListener('click', hideAboutModal);
+    aboutModal.addEventListener('click', (e) => {
+      if (e.target === aboutModal) hideAboutModal();
+    });
+
+    // Copy mode
     function enterCopyMode() {
+      const tab = getActiveTab();
+      if (!tab) return;
       copyMode = true;
-      btnCopy.classList.add('active');
-      copyOverlay = document.createElement('div');
-      copyOverlay.id = 'copy-overlay';
+      updateCopyModeCheck();
 
-      const buffer = term.buffer.active;
+      const term = tab.term;
+      copyOverlay = document.createElement('div');
+      copyOverlay.className = 'copy-overlay';
+
       const fontSize = term.options.fontSize || 14;
       const fontFamily = term.options.fontFamily || 'monospace';
       const cellHeight = term._core._renderService.dimensions.css.cell.height;
@@ -163,21 +563,19 @@
       copyOverlay.style.fontFamily = fontFamily;
       copyOverlay.style.fontSize = fontSize + 'px';
       copyOverlay.style.lineHeight = cellHeight + 'px';
-      copyOverlay.style.letterSpacing = '0px';
 
-      const termEl = termContainer.querySelector('.xterm-screen');
+      const termEl = tab.pane.querySelector('.xterm-screen');
       if (termEl) {
         copyOverlay.style.paddingTop = getComputedStyle(termEl).paddingTop;
         copyOverlay.style.paddingLeft = getComputedStyle(termEl).paddingLeft;
       }
 
+      const buffer = term.buffer.active;
       let text = '';
       for (let i = 0; i < term.rows; i++) {
         const line = buffer.getLine(i + buffer.viewportY);
         if (line) {
-          let lineText = line.translateToString(false);
-          lineText = lineText.replace(/\s+$/, '');
-          text += lineText + '\n';
+          text += line.translateToString(false).replace(/\s+$/, '') + '\n';
         } else {
           text += '\n';
         }
@@ -199,34 +597,185 @@
         copyOverlay.style.transformOrigin = 'top left';
       }
 
-      termContainer.appendChild(copyOverlay);
+      tab.pane.appendChild(copyOverlay);
     }
 
     function exitCopyMode() {
       copyMode = false;
-      btnCopy.classList.remove('active');
+      updateCopyModeCheck();
       if (copyOverlay && copyOverlay.parentNode) {
         copyOverlay.parentNode.removeChild(copyOverlay);
       }
       copyOverlay = null;
     }
 
-    btnCopy.addEventListener('click', () => {
-      if (copyMode) {
-        exitCopyMode();
-      } else {
-        enterCopyMode();
+    function updateCopyModeCheck() {
+      const item = document.querySelector('[data-action="copy-mode"] .check');
+      if (item) item.textContent = copyMode ? '✓' : '';
+    }
+
+    // Menu system
+    let openMenu = null;
+
+    function openMenuDropdown(btn) {
+      closeAllMenus();
+      btn.classList.add('open');
+      openMenu = btn;
+      if (btn.dataset.menu === 'view') buildViewMenu();
+    }
+
+    function closeAllMenus() {
+      document.querySelectorAll('.menu-button').forEach(b => b.classList.remove('open'));
+      openMenu = null;
+    }
+
+    document.querySelectorAll('.menu-button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        if (e.target.closest('.menu-item') || e.target.closest('.menu-separator')) return;
+        if (btn.classList.contains('open')) {
+          closeAllMenus();
+        } else {
+          openMenuDropdown(btn);
+        }
+      });
+      btn.addEventListener('mouseenter', () => {
+        if (openMenu && openMenu !== btn) {
+          openMenuDropdown(btn);
+        }
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.menu-button')) {
+        closeAllMenus();
+      }
+    });
+
+    function buildViewMenu() {
+      let html = '';
+      tabs.forEach(t => {
+        const checked = t.id === activeTabId ? '✓' : '';
+        html += `<div class="menu-item" data-action="switch-tab" data-tab-id="${t.id}"><span class="check">${checked}</span>${t.label}</div>`;
+      });
+      html += '<div class="menu-separator"></div>';
+      html += '<div class="menu-item" data-action="next-tab"><span class="check"></span>Next Terminal<span class="shortcut">Ctrl+Tab</span></div>';
+      html += '<div class="menu-item" data-action="prev-tab"><span class="check"></span>Previous Terminal<span class="shortcut">Ctrl+Shift+Tab</span></div>';
+      viewDropdown.innerHTML = html;
+    }
+
+    // Menu actions
+    document.getElementById('menubar').addEventListener('click', (e) => {
+      const item = e.target.closest('.menu-item');
+      if (!item) return;
+      const action = item.dataset.action;
+      closeAllMenus();
+
+      switch (action) {
+        case 'new-terminal': createTab(); break;
+        case 'connect': showConnectModal(); break;
+        case 'disconnect': {
+          const tab = getActiveTab();
+          if (tab) tab.connection.disconnect();
+          break;
+        }
+        case 'close-tab': closeTab(activeTabId); break;
+        case 'copy-mode':
+          if (copyMode) exitCopyMode(); else enterCopyMode();
+          break;
+        case 'switch-tab':
+          switchTab(item.dataset.tabId);
+          break;
+        case 'next-tab': cycleTab(1); break;
+        case 'prev-tab': cycleTab(-1); break;
+        case 'about': showAboutModal(); break;
+      }
+    });
+
+    function cycleTab(dir) {
+      const idx = tabs.findIndex(t => t.id === activeTabId);
+      const next = (idx + dir + tabs.length) % tabs.length;
+      switchTab(tabs[next].id);
+    }
+
+    // Connect modal
+    function showConnectModal() {
+      modalUrl.value = savedUrl;
+      modalToken.value = savedToken;
+      connectModal.classList.add('visible');
+      modalUrl.focus();
+    }
+
+    function hideConnectModal() {
+      connectModal.classList.remove('visible');
+    }
+
+    modalCancel.addEventListener('click', hideConnectModal);
+    connectModal.addEventListener('click', (e) => {
+      if (e.target === connectModal) hideConnectModal();
+    });
+
+    modalConnect.addEventListener('click', doConnect);
+    modalUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') doConnect(); });
+    modalToken.addEventListener('keydown', (e) => { if (e.key === 'Enter') doConnect(); });
+
+    function doConnect() {
+      let rawUrl = modalUrl.value.trim();
+
+      // Parse http(s) URLs: extract token param and convert to ws(s)
+      if (/^https?:\/\//i.test(rawUrl)) {
+        try {
+          const parsed = new URL(rawUrl);
+          if (parsed.searchParams.has('token') && !modalToken.value.trim()) {
+            modalToken.value = parsed.searchParams.get('token');
+          }
+          parsed.search = '';
+          parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+          if (!parsed.pathname.endsWith('/ws')) {
+            parsed.pathname = parsed.pathname.replace(/\/$/, '') + '/ws';
+          }
+          rawUrl = parsed.toString();
+        } catch(e) {}
+      }
+
+      savedUrl = rawUrl;
+      savedToken = modalToken.value.trim();
+      hideConnectModal();
+
+      const tab = getActiveTab();
+      if (tab) {
+        const url = getWsUrl();
+        const token = savedToken || null;
+        tab.connection.connect(url, token);
+      }
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+        e.preventDefault();
+        createTab();
+      } else if (e.ctrlKey && !e.shiftKey && e.key === 'w') {
+        if (tabs.length > 1) {
+          e.preventDefault();
+          closeTab(activeTabId);
+        }
+      } else if (e.ctrlKey && !e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        cycleTab(1);
+      } else if (e.ctrlKey && e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        cycleTab(-1);
       }
     });
 
     document.addEventListener('copy', () => {
-      if (copyMode) {
-        setTimeout(exitCopyMode, 50);
-      }
+      if (copyMode) setTimeout(exitCopyMode, 50);
     });
 
-    term.write('Web Terminal - press Connect or Enter to start\r\n');
-    setTimeout(connect, 300);
+    btnNewTab.addEventListener('click', () => createTab());
+
+    // Initialize first tab
+    createTab(true);
   </script>
 </body>
 </html>
