@@ -41,11 +41,11 @@
       cursor: pointer;
       font-size: 13px;
       font-weight: 500;
+      background: #1677ff;
+      color: #fff;
     }
-    #btn-connect { background: #4caf50; color: #fff; }
-    #btn-connect:hover { background: #45a049; }
-    #btn-disconnect { background: #f44336; color: #fff; }
-    #btn-disconnect:hover { background: #d32f2f; }
+    #connection-bar button:hover { background: #4096ff; }
+    #connection-bar button.active { background: #0958d9; }
     #status {
       font-size: 12px;
       padding: 2px 8px;
@@ -58,6 +58,19 @@
     .xterm-rows span {
       overflow: hidden;
     }
+    #terminal-container { position: relative; }
+    #copy-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 10;
+      overflow: hidden;
+      white-space: pre;
+      user-select: text;
+      -webkit-user-select: text;
+      color: transparent;
+      background: rgba(22, 119, 255, 0.04);
+      cursor: text;
+    }
   </style>
 </head>
 <body>
@@ -66,6 +79,7 @@
     <input name="token" type="password" placeholder="Token (optional)">
     <button id="btn-connect">Connect</button>
     <button id="btn-disconnect">Disconnect</button>
+    <button id="btn-copy">Copy</button>
     <span id="status" class="disconnected">disconnected</span>
   </div>
   <div id="terminal-container" style="flex:1; overflow:hidden;"></div>
@@ -83,7 +97,17 @@
     const tokenInput = document.querySelector('input[name="token"]');
     const btnConnect = document.getElementById('btn-connect');
     const btnDisconnect = document.getElementById('btn-disconnect');
+    const btnCopy = document.getElementById('btn-copy');
     const statusEl = document.getElementById('status');
+    const termContainer = document.getElementById('terminal-container');
+
+    // Extract token from URL query param and strip it from address bar
+    const params = new URLSearchParams(location.search);
+    if (params.has('token')) {
+      tokenInput.value = params.get('token');
+      const cleanUrl = location.pathname;
+      history.replaceState(null, '', cleanUrl);
+    }
 
     const termUI = new TerminalUI(document.getElementById('terminal-container'));
     const term = termUI.init();
@@ -114,6 +138,93 @@
 
     btnConnect.addEventListener('click', connect);
     btnDisconnect.addEventListener('click', disconnect);
+
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') connect();
+    });
+    tokenInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') connect();
+    });
+
+    let copyMode = false;
+    let copyOverlay = null;
+
+    function enterCopyMode() {
+      copyMode = true;
+      btnCopy.classList.add('active');
+      copyOverlay = document.createElement('div');
+      copyOverlay.id = 'copy-overlay';
+
+      const buffer = term.buffer.active;
+      const fontSize = term.options.fontSize || 14;
+      const fontFamily = term.options.fontFamily || 'monospace';
+      const cellHeight = term._core._renderService.dimensions.css.cell.height;
+      const cellWidth = term._core._renderService.dimensions.css.cell.width;
+
+      copyOverlay.style.fontFamily = fontFamily;
+      copyOverlay.style.fontSize = fontSize + 'px';
+      copyOverlay.style.lineHeight = cellHeight + 'px';
+      copyOverlay.style.letterSpacing = '0px';
+
+      const termEl = termContainer.querySelector('.xterm-screen');
+      if (termEl) {
+        copyOverlay.style.paddingTop = getComputedStyle(termEl).paddingTop;
+        copyOverlay.style.paddingLeft = getComputedStyle(termEl).paddingLeft;
+      }
+
+      let text = '';
+      for (let i = 0; i < term.rows; i++) {
+        const line = buffer.getLine(i + buffer.viewportY);
+        if (line) {
+          let lineText = line.translateToString(false);
+          lineText = lineText.replace(/\s+$/, '');
+          text += lineText + '\n';
+        } else {
+          text += '\n';
+        }
+      }
+      copyOverlay.textContent = text;
+
+      const charSpan = document.createElement('span');
+      charSpan.style.fontFamily = fontFamily;
+      charSpan.style.fontSize = fontSize + 'px';
+      charSpan.style.position = 'absolute';
+      charSpan.style.visibility = 'hidden';
+      charSpan.textContent = 'M';
+      document.body.appendChild(charSpan);
+      const measuredWidth = charSpan.getBoundingClientRect().width;
+      document.body.removeChild(charSpan);
+
+      if (Math.abs(measuredWidth - cellWidth) > 0.5) {
+        copyOverlay.style.transform = `scaleX(${cellWidth / measuredWidth})`;
+        copyOverlay.style.transformOrigin = 'top left';
+      }
+
+      termContainer.appendChild(copyOverlay);
+    }
+
+    function exitCopyMode() {
+      copyMode = false;
+      btnCopy.classList.remove('active');
+      if (copyOverlay && copyOverlay.parentNode) {
+        copyOverlay.parentNode.removeChild(copyOverlay);
+      }
+      copyOverlay = null;
+    }
+
+    btnCopy.addEventListener('click', () => {
+      if (copyMode) {
+        exitCopyMode();
+      } else {
+        enterCopyMode();
+      }
+    });
+
+    document.addEventListener('copy', () => {
+      if (copyMode) {
+        setTimeout(exitCopyMode, 50);
+      }
+    });
 
     term.write('Web Terminal\r\n');
     setTimeout(connect, 300);

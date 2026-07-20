@@ -13,23 +13,35 @@ Usage:
 import asyncio
 import json
 import os
-import pty
 import secrets
-import select
 import signal
+import socket
 import ssl
 import struct
-import fcntl
-import termios
+import sys
 import argparse
 import warnings
 from pathlib import Path
+
+IS_WINDOWS = sys.platform == "win32"
+
+if not IS_WINDOWS:
+    import pty
+    import select
+    import fcntl
+    import termios
 
 try:
     from aiohttp import web
     from aiohttp.web_runner import GracefulExit
 except ImportError:
     raise SystemExit("Install aiohttp: pip install aiohttp")
+
+if IS_WINDOWS:
+    try:
+        import winpty
+    except ImportError:
+        winpty = None
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
@@ -39,6 +51,8 @@ READ_BUFSIZE = 65536
 
 
 def set_pty_size(fd, cols, rows):
+    if IS_WINDOWS:
+        return
     size = struct.pack("HHHH", rows, cols, 0, 0)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, size)
 
@@ -156,6 +170,75 @@ class PtyProcess:
             return False
 
 
+class WindowsPtyProcess:
+    """PTY process for Windows using pywinpty."""
+
+    def __init__(self, shell="cmd.exe", cols=80, rows=24):
+        self.shell = shell
+        self.cols = cols
+        self.rows = rows
+        self.process = None
+
+    def spawn(self):
+        if winpty is None:
+            raise RuntimeError("pywinpty is required on Windows: pip install pywinpty")
+        self.process = winpty.PtyProcess.spawn(
+            self.shell, dimensions=(self.rows, self.cols)
+        )
+        _active_processes.append(self)
+        return self
+
+    def resize(self, cols, rows):
+        self.cols = cols
+        self.rows = rows
+        if self.process:
+            self.process.setwinsize(rows, cols)
+
+    def read_nonblock(self):
+        if not self.process or not self.process.isalive():
+            return b""
+        try:
+            data = self.process.read(READ_BUFSIZE)
+            return data.encode("utf-8") if isinstance(data, str) else data
+        except (EOFError, winpty.WinptyError):
+            return b""
+
+    def read_wait(self, timeout=0.01):
+        if not self.process or not self.process.isalive():
+            return b""
+        import time
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            try:
+                data = self.process.read(READ_BUFSIZE)
+                if data:
+                    return data.encode("utf-8") if isinstance(data, str) else data
+            except (EOFError, winpty.WinptyError):
+                return b""
+            time.sleep(0.005)
+        return b""
+
+    def write(self, data):
+        if self.process:
+            text = data if isinstance(data, str) else data.decode("utf-8", errors="replace")
+            self.process.write(text)
+
+    def kill(self):
+        if self in _active_processes:
+            _active_processes.remove(self)
+        if self.process:
+            try:
+                self.process.terminate()
+            except Exception:
+                pass
+            self.process = None
+
+    def is_alive(self):
+        if self.process is None:
+            return False
+        return self.process.isalive()
+
+
 def _safe_utf8_split(buf: bytes) -> tuple[bytes, bytes]:
     """Split buf into (complete_utf8, leftover_incomplete_tail).
     Ensures we never send a partial multi-byte UTF-8 character."""
@@ -201,7 +284,10 @@ async def websocket_handler(request):
     await ws.prepare(request)
 
     shell = request.app["shell"]
-    proc = PtyProcess(shell=shell)
+    if IS_WINDOWS:
+        proc = WindowsPtyProcess(shell=shell)
+    else:
+        proc = PtyProcess(shell=shell)
     proc.spawn()
 
     # Accumulator for incomplete UTF-8 at read boundaries
@@ -288,11 +374,35 @@ def create_app(shell="/bin/bash", token=None, max_connections=None):
     return app
 
 
+def _get_interface_ips():
+    """Return a list of non-loopback IPv4 addresses from network interfaces."""
+    ips = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addr = info[4][0]
+            if addr and not addr.startswith("127."):
+                ips.append(addr)
+    except (socket.gaierror, OSError):
+        pass
+    if not ips:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            addr = s.getsockname()[0]
+            s.close()
+            if not addr.startswith("127."):
+                ips.append(addr)
+        except (OSError, socket.error):
+            pass
+    return list(dict.fromkeys(ips))
+
+
 def main():
+    default_shell = "cmd.exe" if IS_WINDOWS else "/bin/bash"
     parser = argparse.ArgumentParser(description="Web Terminal Server")
     parser.add_argument("--port", type=int, default=8888)
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--shell", default="/bin/bash")
+    parser.add_argument("--shell", default=default_shell)
     parser.add_argument("--token", action="store_true",
                         help="Generate a random access token (required for WebSocket connections)")
     parser.add_argument("--max-connections", type=int, default=4,
@@ -322,13 +432,23 @@ def main():
 
     app = create_app(shell=args.shell, token=token, max_connections=max_connections)
     proto = "https" if ssl_ctx else "http"
-    print(f"Starting web terminal on {proto}://{args.host}:{args.port}")
-    print(f"Shell: {args.shell}")
-    print(f"Max connections: {max_connections or 'unlimited'}")
+
+    token_qs = f"?token={token}" if token else ""
+
+    print(f"Web Terminal Server")
+    print(f"  Shell: {args.shell}")
+    print(f"  Max connections: {max_connections or 'unlimited'}")
+    print()
+    print("Access URLs:")
+    print(f"    {proto}://localhost:{args.port}/{token_qs}")
+    if args.host in ("0.0.0.0", "::"):
+        for ip in _get_interface_ips():
+            print(f"    {proto}://{ip}:{args.port}/{token_qs}")
+    else:
+        print(f"    {proto}://{args.host}:{args.port}/{token_qs}")
+    print()
     if token:
         print(f"Token: {token}")
-    else:
-        print("Token: disabled (no authentication)")
     print("Press Ctrl+C to stop.")
 
     try:
