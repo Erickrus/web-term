@@ -31,6 +31,7 @@ class TerminalConnection {
 
     this.client.onOpen = () => {
       this._setStatus("connected");
+      this.terminal.reset();
       this.client.sendJSON({
         cols: this.terminal.cols,
         rows: this.terminal.rows,

@@ -128,7 +128,6 @@
     function connect() {
       const url = getWsUrl();
       const token = tokenInput.value.trim() || null;
-      term.write('Connecting...\r\n');
       connection.connect(url, token);
     }
 
@@ -226,7 +225,7 @@
       }
     });
 
-    term.write('Web Terminal\r\n');
+    term.write('Web Terminal - press Connect or Enter to start\r\n');
     setTimeout(connect, 300);
   </script>
 </body>
