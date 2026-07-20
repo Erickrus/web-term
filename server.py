@@ -453,11 +453,10 @@ def main():
 
     try:
         web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_ctx,
-                    print=None, handle_signals=True)
+                    print=None, handle_signals=True, shutdown_timeout=2.0)
     except (KeyboardInterrupt, SystemExit, GracefulExit):
         pass
     finally:
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
         _cleanup_all()
 
 
