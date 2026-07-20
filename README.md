@@ -6,22 +6,43 @@ independent PTY-backed shell session.
 ## Architecture
 
 ```
-Browser (xterm.js)  ←—WebSocket—→  server.py  ←—PTY—→  /bin/bash
+Browser (xterm.js)  ←—WebSocket—→  server.py  ←—PTY—→  shell
 ```
 
 - **`server.py`** — aiohttp server: serves the UI, handles WebSocket
   connections, spawns/manages PTY child processes, relays I/O as binary frames.
+  Supports Linux/macOS (via `pty`/`fork`) and Windows (via `pywinpty`).
 - **`static/index.html`** — Terminal frontend using xterm.js with the FitAddon
   (auto-resize via ResizeObserver) and CanvasAddon.
-- **`static/ws-client.js`** / **`static/terminal-connection.js`** — Optional
-  standalone WebSocket/connection helpers (not used by the main UI).
+- **`static/js/websocket-client.js`** — WebSocket client wrapper.
+- **`static/js/terminal-connection.js`** — Bridges WebSocket and xterm.js.
+- **`static/js/terminal-ui.js`** — Terminal UI setup, themes, and addons.
 
 ## Quick Start
 
 ```bash
-pip install aiohttp
+pip install -r requirements.txt
 python server.py
-# → http://localhost:8888
+```
+
+On startup the server prints all accessible URLs (like Jupyter):
+
+```
+Web Terminal Server
+  Shell: /bin/bash
+  Max connections: 4
+
+Access URLs:
+    http://localhost:8888/
+    http://192.168.1.5:8888/
+```
+
+With `--token`, URLs include the token as a query parameter for one-click access:
+
+```
+Access URLs:
+    http://localhost:8888/?token=abc123xyz
+    http://192.168.1.5:8888/?token=abc123xyz
 ```
 
 ## Options
@@ -30,11 +51,17 @@ python server.py
 |------|---------|-------------|
 | `--port` | 8888 | Listen port |
 | `--host` | 0.0.0.0 | Bind address |
-| `--shell` | /bin/bash | Shell to spawn per session |
+| `--shell` | `/bin/bash` (Linux/macOS), `cmd.exe` (Windows) | Shell to spawn per session |
 | `--token` | *(disabled)* | Generate a random access token; printed to stdout on startup |
 | `--max-connections` | 4 | Maximum concurrent sessions (0 = unlimited) |
 | `--cert` | *(disabled)* | Path to TLS certificate file (enables HTTPS/WSS) |
 | `--key` | *(auto)* | Path to TLS private key (defaults to cert path with `.key` extension) |
+
+## Windows Support
+
+On Windows, the server uses `pywinpty` to spawn `cmd.exe` (or any shell passed
+via `--shell`). This dependency is included in `requirements.txt` and only
+installed on Windows systems.
 
 ## Authentication
 
@@ -44,8 +71,16 @@ With `--token`, the server generates a random URL-safe token and prints it at
 startup. Clients must pass it as a `?token=` query parameter on the WebSocket
 URL. Connections without a valid token receive HTTP 403.
 
-The web UI has a password-masked Token field for pasting the token before
-connecting.
+The web UI reads the token from the URL on page load, populates the password
+field, and strips the token from the address bar (via `history.replaceState`)
+to prevent shoulder-surfing or leaking via browser history.
+
+## Copy Mode
+
+The UI has a **Copy** button for selecting terminal text when mouse reporting
+is active (e.g., inside vim or tmux). Clicking it overlays selectable text
+matching the terminal grid. After copying (Cmd+C / Ctrl+C), the overlay
+auto-dismisses.
 
 ## TLS
 
@@ -53,7 +88,6 @@ To enable HTTPS/WSS, pass `--cert`:
 
 ```bash
 python server.py --cert cert.pem --key key.pem
-# → https://localhost:8888
 ```
 
 If `--key` is omitted, the server looks for a file with the same name as the
@@ -66,8 +100,6 @@ openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout cert.key -out cert.pem \
   -days 365 -subj '/CN=localhost'
 ```
-
-Note: browsers will show a security warning for self-signed certs.
 
 ## Connection Limit
 
@@ -82,12 +114,12 @@ python server.py --max-connections 0    # unlimited
 ## Resize Handling
 
 The frontend uses a `ResizeObserver` on the terminal container. When the
-container dimensions change (window resize, iframe resize, DevTools open, etc.):
+container dimensions change:
 
 1. `fitAddon.fit()` recalculates cols/rows from pixel dimensions
 2. xterm.js `onResize` fires → client sends `{"cols": N, "rows": M}` over WS
-3. Server calls `TIOCSWINSZ` on the PTY fd
-4. Shell/application receives `SIGWINCH` and adapts
+3. Server calls `TIOCSWINSZ` on the PTY fd (Linux/macOS) or `setwinsize` (Windows)
+4. Shell receives `SIGWINCH` and adapts
 
 ## Wire Protocol
 
@@ -102,6 +134,6 @@ See [PROTOCOL.md](PROTOCOL.md) for frame-level details.
 
 ## Sessions
 
-Each WebSocket connection is an independent session with its own bash process.
+Each WebSocket connection is an independent session with its own shell process.
 Disconnecting kills the shell. There is no session persistence — use tmux/screen
 inside the terminal if you need to survive disconnects.
