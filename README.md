@@ -3,6 +3,8 @@
 Browser-based terminal served over WebSocket. Each connection spawns an
 independent PTY-backed shell session.
 
+<img src="screenshot.png" width="1506px" />
+
 ## Architecture
 
 ```
