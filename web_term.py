@@ -175,6 +175,32 @@ HTML_PAGE = r"""<!DOCTYPE html>
     border-color: #0c67d6; }
   #bar { flex: 0 0 auto; font: 11px monospace; color: #666;
     padding: 2px 8px; background: #f0f0f0; }
+  /* File browser overlay: covers the whole fixed #app (terminal, keys, bar)
+     without touching the flex layout, so the terminal is never resized and the
+     PTY is never resized when toggling. */
+  #files { position: absolute; inset: 0; z-index: 10; background: #fff;
+    display: none; flex-direction: column; }
+  #files.open { display: flex; }
+  #fhead { flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+    padding: 6px; background: #f0f0f0; border-bottom: 1px solid #ccc; }
+  #fhead button, #fupload { font: 12px monospace; color: #111; background: #fff;
+    border: 1px solid #bbb; border-radius: 4px; padding: 6px 8px;
+    -webkit-user-select: none; user-select: none; touch-action: manipulation;
+    cursor: pointer; }
+  #fpath { flex: 1 1 auto; min-width: 0; font: 11px monospace; color: #444;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    direction: rtl; text-align: left; }
+  #flist { flex: 1 1 auto; min-height: 0; overflow: auto;
+    -webkit-overflow-scrolling: touch; }
+  .frow { display: flex; align-items: center; gap: 8px; min-height: 40px;
+    padding: 6px 10px; border-bottom: 1px solid #eee; font: 13px monospace;
+    color: #111; -webkit-user-select: none; user-select: none;
+    touch-action: manipulation; }
+  .frow:active { background: #e8f0fe; }
+  .frow .fname { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .frow.dir .fname { color: #0c67d6; }
+  .frow .fsize { flex: 0 0 auto; font-size: 11px; color: #999; }
 </style>
 </head>
 <body>
@@ -197,8 +223,20 @@ HTML_PAGE = r"""<!DOCTYPE html>
     <button data-act="copy">copy</button>
     <button data-act="paste">paste</button>
     <button data-act="copyall">all</button>
+    <button data-act="files">files</button>
   </div>
   <div id="bar"><span id="status">connecting…</span></div>
+  <div id="files">
+    <div id="fhead">
+      <button id="fclose">‹ term</button>
+      <button id="fup">up</button>
+      <button id="frefresh">⟳</button>
+      <label id="fupload">upload<input id="ffile" type="file" multiple
+        hidden /></label>
+      <span id="fpath"></span>
+    </div>
+    <div id="flist"></div>
+  </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
@@ -501,15 +539,166 @@ document.querySelectorAll("#keys button").forEach((btn) => {
           ? () => pasteClipboard()
           : act === "copyall"
             ? () => copyAll()
-            : scroll !== null
-              ? () => pageScroll(parseInt(scroll, 10))
-              : (() => { const seq = decodeSeq(btn.getAttribute("data-seq"));
-                         return () => sendSeq(seq); })();
+            : act === "files"
+              ? () => toggleFiles()
+              : scroll !== null
+                ? () => pageScroll(parseInt(scroll, 10))
+                : (() => { const seq = decodeSeq(btn.getAttribute("data-seq"));
+                           return () => sendSeq(seq); })();
   btn.addEventListener("touchstart", (e) => {
     e.preventDefault();          // keep the soft keyboard up
     fire();
   }, { passive: false });
   btn.addEventListener("mousedown", (e) => { e.preventDefault(); fire(); });
+});
+
+// ---- file browser ------------------------------------------------------
+// A full-screen overlay (#files) sits above the terminal. Browsing never
+// navigates the page, and downloads are fetched as a Blob + saved via a
+// synthetic <a download> so iPhone Chrome can't render a file inline and
+// kill the terminal's WebSocket. All endpoints are behind the login cookie
+// (sent automatically on same-origin fetch).
+const filesEl = document.getElementById("files");
+const flistEl = document.getElementById("flist");
+const fpathEl = document.getElementById("fpath");
+let filesOpen = false, curDir = "", curParent = "", dirLoaded = false;
+
+function toggleFiles() {
+  filesOpen = !filesOpen;
+  filesEl.classList.toggle("open", filesOpen);
+  if (filesOpen && !dirLoaded) { dirLoaded = true; loadDir(""); }
+}
+
+function fmtSize(n) {
+  if (n < 1024) return n + "B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + "K";
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + "M";
+  return (n / 1073741824).toFixed(1) + "G";
+}
+
+async function loadDir(path) {
+  try {
+    // _=<ts> busts any HTTP cache so a re-list always reflects the real
+    // directory; {cache:"no-store"} is the belt to that suspenders.
+    const r = await fetch(
+      "/api/ls?path=" + encodeURIComponent(path || "") + "&_=" + Date.now(),
+      { cache: "no-store" });
+    if (r.status === 401) { location.href = "/login"; return; }
+    const d = await r.json();
+    if (!r.ok) { flashStatus(d.error || "ls failed"); return; }
+    curDir = d.path;
+    curParent = d.parent;
+    fpathEl.textContent = d.path;
+    flistEl.innerHTML = "";
+    if (d.parent && d.parent !== d.path) {
+      flistEl.appendChild(makeRow("..", true, 0, () => loadDir(d.parent)));
+    }
+    for (const e of d.entries) {
+      flistEl.appendChild(makeRow(
+        e.name, e.is_dir, e.size,
+        e.is_dir ? () => loadDir(e.path)
+                 : () => downloadFile(e.path, e.name)));
+    }
+    flistEl.scrollTop = 0;
+  } catch (err) {
+    flashStatus("ls error");
+  }
+}
+
+function makeRow(name, isDir, size, onTap) {
+  const row = document.createElement("div");
+  row.className = "frow" + (isDir ? " dir" : "");
+  const nm = document.createElement("span");
+  nm.className = "fname";
+  nm.textContent = (isDir ? "📁 " : "📄 ") + name;
+  row.appendChild(nm);
+  if (!isDir) {
+    const sz = document.createElement("span");
+    sz.className = "fsize";
+    sz.textContent = fmtSize(size);
+    row.appendChild(sz);
+  }
+  // Distinguish a tap from a scroll: record where the finger landed and only
+  // fire onTap if it barely moved. We must NOT preventDefault on touchstart —
+  // that would cancel the list's scroll gesture (the original bug).
+  let sx = 0, sy = 0, moved = false;
+  row.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    sx = t ? t.clientX : 0; sy = t ? t.clientY : 0; moved = false;
+  }, { passive: true });
+  row.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    if (t && (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10)) {
+      moved = true;   // it's a scroll, not a tap
+    }
+  }, { passive: true });
+  row.addEventListener("touchend", (e) => {
+    if (moved) return;        // scrolled — ignore
+    e.preventDefault();       // stop the synthesized click (avoid double-fire)
+    onTap();
+  });
+  // Desktop / non-touch fallback.
+  row.addEventListener("click", () => onTap());
+  return row;
+}
+
+async function downloadFile(path, name) {
+  flashStatus("downloading…");
+  try {
+    const r = await fetch("/api/download?path=" + encodeURIComponent(path));
+    if (r.status === 401) { location.href = "/login"; return; }
+    if (!r.ok) { flashStatus("download failed"); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    // If an engine insists on navigating a blob: URL, send it to a throwaway
+    // tab so the terminal tab is never replaced.
+    a.target = "_blank";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    flashStatus("saved " + name);
+  } catch (err) {
+    flashStatus("download error");
+  }
+}
+
+async function uploadFiles(fileList) {
+  const files = Array.from(fileList);
+  let done = 0;
+  for (const f of files) {
+    flashStatus("uploading " + f.name + "…");
+    try {
+      const r = await fetch(
+        "/api/upload?dir=" + encodeURIComponent(curDir) +
+        "&name=" + encodeURIComponent(f.name),
+        { method: "POST", body: f });
+      if (r.status === 401) { location.href = "/login"; return; }
+      if (r.ok) done++;
+      else flashStatus("upload failed: " + f.name);
+    } catch (err) {
+      flashStatus("upload error: " + f.name);
+    }
+  }
+  flashStatus("uploaded " + done + "/" + files.length);
+  loadDir(curDir);
+}
+
+document.getElementById("fclose").addEventListener("click", toggleFiles);
+document.getElementById("fup").addEventListener("click", () => {
+  if (curParent && curParent !== curDir) loadDir(curParent);
+});
+document.getElementById("frefresh").addEventListener("click", () => {
+  loadDir(curDir);
+  flashStatus("refreshed");
+});
+document.getElementById("ffile").addEventListener("change", (e) => {
+  if (e.target.files && e.target.files.length) uploadFiles(e.target.files);
+  e.target.value = "";   // reset so the same file can be re-picked
 });
 
 connect();
@@ -691,6 +880,10 @@ class TermHandler(http.server.BaseHTTPRequestHandler):
             self._serve_login()
         elif path == "/logout":
             self._do_logout()
+        elif path == "/api/ls":
+            self._api_ls()
+        elif path == "/api/download":
+            self._api_download()
         else:
             self.send_error(404, "not found")
 
@@ -698,6 +891,8 @@ class TermHandler(http.server.BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/login":
             self._handle_login()
+        elif path == "/api/upload":
+            self._api_upload()
         else:
             self.send_error(404, "not found")
 
@@ -720,6 +915,125 @@ class TermHandler(http.server.BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_json(self, obj, status=200):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    # --- File browser API ----------------------------------------------------
+    # All three endpoints sit behind the same login as /ws. They add no new
+    # privilege: the terminal tab already grants full shell access to this
+    # account, so the file API simply gives the same reach a nicer UI. Every
+    # download forces Content-Disposition: attachment so a browser (notably
+    # iPhone Chrome) can never render a file inline and navigate away from the
+    # single-page terminal.
+
+    def _api_ls(self):
+        if not self._authed():
+            self._send_json({"error": "unauthorized"}, 401)
+            return
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        raw = qs.get("path", [""])[0]
+        d = os.path.realpath(raw) if raw else os.getcwd()
+        if not os.path.isdir(d):
+            self._send_json({"error": "not a directory", "path": d}, 404)
+            return
+        try:
+            names = os.listdir(d)
+        except PermissionError:
+            self._send_json({"error": "permission denied", "path": d}, 403)
+            return
+        except OSError as e:
+            self._send_json({"error": str(e), "path": d}, 500)
+            return
+        entries = []
+        for name in names:
+            full = os.path.join(d, name)
+            try:
+                is_dir = os.path.isdir(full)
+                size = 0 if is_dir else os.path.getsize(full)
+            except OSError:
+                continue  # dangling symlink / vanished / unreadable — skip it
+            entries.append({"name": name, "path": full,
+                            "is_dir": is_dir, "size": size})
+        # Directories first, then files; each group sorted case-insensitively.
+        entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
+        self._send_json({"path": d, "parent": os.path.dirname(d),
+                         "entries": entries})
+
+    def _api_download(self):
+        if not self._authed():
+            self._send_json({"error": "unauthorized"}, 401)
+            return
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        p = os.path.realpath(qs.get("path", [""])[0])
+        if not os.path.isfile(p):
+            self._send_json({"error": "not a file", "path": p}, 404)
+            return
+        name = os.path.basename(p)
+        # RFC 5987: ascii-safe fallback plus a UTF-8 encoded name for spaces /
+        # unicode. application/octet-stream + attachment => never render inline.
+        ascii_name = name.encode("ascii", "replace").decode("ascii") \
+            .replace('"', "'")
+        enc_name = urllib.parse.quote(name, safe="")
+        try:
+            size = os.path.getsize(p)
+            f = open(p, "rb")
+        except OSError as e:
+            self._send_json({"error": str(e), "path": p}, 500)
+            return
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(size))
+            self.send_header(
+                "Content-Disposition",
+                f'attachment; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{enc_name}")
+            self.end_headers()
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+        finally:
+            f.close()
+
+    def _api_upload(self):
+        if not self._authed():
+            self._send_json({"error": "unauthorized"}, 401)
+            return
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        d = os.path.realpath(qs.get("dir", [""])[0] or os.getcwd())
+        name = os.path.basename(qs.get("name", [""])[0])
+        if not os.path.isdir(d):
+            self._send_json({"error": "not a directory", "dir": d}, 404)
+            return
+        if not name:
+            self._send_json({"error": "missing name"}, 400)
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        dest = os.path.join(d, name)
+        try:
+            # Raw request body IS the file bytes (client sends the File object
+            # directly) — no multipart parsing needed. Read exactly
+            # Content-Length so we never block waiting on a short body.
+            with open(dest, "wb") as out:
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    remaining -= len(chunk)
+        except OSError as e:
+            self._send_json({"error": str(e), "dir": d}, 500)
+            return
+        self._send_json({"ok": True, "name": name, "path": dest})
 
     def _serve_login(self, error=""):
         self._send_html(LOGIN_PAGE.replace("__ERROR__", error)
